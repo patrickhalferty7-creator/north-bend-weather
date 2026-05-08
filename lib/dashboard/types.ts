@@ -1,26 +1,13 @@
-import type { LocationSeason, HistoricalAverage, VintageAnalog, VintageCandidate } from "@/lib/viticulture";
-import type { SeasonWindow, UnitSystem, WeatherSourceStatus } from "@/lib/weather";
+import type { ClimateSummary, RegionComparison, SeasonWindow, UnitSystem, WeatherSourceStatus } from "@/lib/weather";
 
-export interface DashboardRequest {
-  year: number;
-  unit: UnitSystem;
-  compareYears: number[];
-  currentDate?: string;
-}
-
-export interface DashboardResponse {
+export interface ClimateDashboardResponse {
   generatedAt: string;
   currentDate: string;
-  unit: UnitSystem;
   year: number;
+  unit: UnitSystem;
   seasonWindow: SeasonWindow;
-  compareYears: number[];
-  primary: LocationSeason | null;
-  regions: LocationSeason[];
-  comparisonYears: VintageCandidate[];
-  historicalAverage: HistoricalAverage;
-  analogs: VintageAnalog[];
+  subject: ClimateSummary;
+  comparisons: RegionComparison[];
   sources: WeatherSourceStatus[];
   warnings: string[];
-  error: string | null;
 }

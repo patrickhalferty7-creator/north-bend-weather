@@ -1,15 +1,5 @@
-import { daysBetweenInclusive } from "@/lib/weather";
-import type { DailyWeather, LocationConfig, UnitSystem } from "@/lib/weather";
-import type {
-  DailyViticulture,
-  HistoricalAverage,
-  SeasonSeries,
-  SeasonSummary,
-  TrendDirection,
-  TrendWindow,
-  VintageAnalog,
-  VintageCandidate
-} from "./types";
+import { daysBetweenInclusive, type DailyWeather, type LocationConfig, type UnitSystem } from "@/lib/weather";
+import type { ClimateSummary, DailyViticulture, RegionComparison } from "@/lib/weather";
 
 const GDD_BASE = {
   imperial: 50,
@@ -21,7 +11,7 @@ const FROST_THRESHOLD = {
   metric: 0
 } satisfies Record<UnitSystem, number>;
 
-const HEAT_SPIKE_THRESHOLD = {
+const HEAT_THRESHOLD = {
   imperial: 90,
   metric: 32
 } satisfies Record<UnitSystem, number>;
@@ -40,27 +30,21 @@ export function calculateDailyGdd({
   return round(Math.max((temperatureMax + temperatureMin) / 2 - base, 0), 2);
 }
 
-export function buildSeasonSeries({
-  daily,
+export function summarizeClimate({
   location,
+  daily,
   unit,
-  year,
   startDate,
-  endDate,
-  currentDate
+  warnings = []
 }: {
-  daily: DailyWeather[];
   location: LocationConfig;
+  daily: DailyWeather[];
   unit: UnitSystem;
-  year: number;
   startDate: string;
-  endDate: string;
-  currentDate: string;
-}): SeasonSeries {
+  warnings?: string[];
+}): ClimateSummary {
   let cumulativeGdd = 0;
-
   const viticultureDaily = daily
-    .filter((day) => day.date >= startDate && day.date <= endDate)
     .sort((a, b) => a.date.localeCompare(b.date))
     .map<DailyViticulture>((day) => {
       const gdd = calculateDailyGdd({
@@ -76,214 +60,64 @@ export function buildSeasonSeries({
         cumulativeGdd: round(cumulativeGdd, 2),
         diurnalRange: round(day.temperatureMax - day.temperatureMin, 2),
         frostRisk: day.temperatureMin <= FROST_THRESHOLD[unit],
-        heatSpike: day.temperatureMax >= HEAT_SPIKE_THRESHOLD[unit],
+        heatSpike: day.temperatureMax >= HEAT_THRESHOLD[unit],
         dayOfSeason: daysBetweenInclusive(startDate, day.date)
       };
     });
 
-  return {
-    daily: viticultureDaily,
-    summary: summarizeSeason({
-      daily: viticultureDaily,
-      location,
-      unit,
-      year,
-      startDate,
-      endDate,
-      currentDate
-    })
-  };
-}
-
-export function summarizeSeason({
-  daily,
-  location,
-  unit,
-  year,
-  startDate,
-  endDate,
-  currentDate
-}: {
-  daily: DailyViticulture[];
-  location: LocationConfig;
-  unit: UnitSystem;
-  year: number;
-  startDate: string;
-  endDate: string;
-  currentDate: string;
-}): SeasonSummary {
-  const latestDate = daily.at(-1)?.date ?? null;
-  const daysElapsed = daily.length;
-  const cumulativeGdd = daily.at(-1)?.cumulativeGdd ?? 0;
-  const precipitation = sum(daily.map((day) => day.precipitation));
-  const stale =
-    endDate.slice(0, 4) === currentDate.slice(0, 4) &&
-    latestDate != null &&
-    daysBetweenInclusive(latestDate, currentDate) > 2;
+  const last30 = viticultureDaily.slice(-30);
 
   return {
-    year,
     location,
-    unit,
-    startDate,
-    endDate,
-    latestDate,
-    daysElapsed,
-    cumulativeGdd: round(cumulativeGdd, 1),
-    precipitation: round(precipitation, 2),
-    averageHigh: averageOrNull(daily.map((day) => day.temperatureMax)),
-    averageLow: averageOrNull(daily.map((day) => day.temperatureMin)),
-    averageMean: averageOrNull(daily.map((day) => day.temperatureMean)),
-    averageDiurnalRange: averageOrNull(daily.map((day) => day.diurnalRange)),
-    frostDays: daily.filter((day) => day.frostRisk).length,
-    heatSpikeDays: daily.filter((day) => day.heatSpike).length,
-    last7: calculateTrend(daily, 7),
-    last14: calculateTrend(daily, 14),
-    last30: calculateTrend(daily, 30),
-    stale
+    latestDate: viticultureDaily.at(-1)?.date ?? null,
+    days: viticultureDaily.length,
+    cumulativeGdd: round(viticultureDaily.at(-1)?.cumulativeGdd ?? 0, 1),
+    precipitation: round(sum(viticultureDaily.map((day) => day.precipitation)), 2),
+    averageHigh: average(viticultureDaily.map((day) => day.temperatureMax)),
+    averageLow: average(viticultureDaily.map((day) => day.temperatureMin)),
+    averageMean: average(viticultureDaily.map((day) => day.temperatureMean)),
+    averageDiurnalRange: average(viticultureDaily.map((day) => day.diurnalRange)),
+    frostDays: viticultureDaily.filter((day) => day.frostRisk).length,
+    heatSpikeDays: viticultureDaily.filter((day) => day.heatSpike).length,
+    last30Gdd: round(sum(last30.map((day) => day.gdd)), 1),
+    last30Precipitation: round(sum(last30.map((day) => day.precipitation)), 2),
+    daily: viticultureDaily,
+    warnings
   };
 }
 
-export function calculateTrend(daily: DailyViticulture[], days: number): TrendWindow {
-  const current = daily.slice(-days);
-  const previous = daily.slice(Math.max(0, daily.length - days * 2), Math.max(0, daily.length - days));
-  const currentGdd = sum(current.map((day) => day.gdd));
-  const previousGdd = previous.length ? sum(previous.map((day) => day.gdd)) : null;
-  const currentPrecipitation = sum(current.map((day) => day.precipitation));
-  const previousPrecipitation = previous.length
-    ? sum(previous.map((day) => day.precipitation))
-    : null;
-  const currentMean = averageOrNull(current.map((day) => day.temperatureMean));
-  const previousMean = previous.length
-    ? averageOrNull(previous.map((day) => day.temperatureMean))
-    : null;
-
-  return {
-    days,
-    gdd: round(currentGdd, 1),
-    precipitation: round(currentPrecipitation, 2),
-    meanTemperature: currentMean,
-    gddDelta: previousGdd == null ? null : round(currentGdd - previousGdd, 1),
-    precipitationDelta:
-      previousPrecipitation == null
-        ? null
-        : round(currentPrecipitation - previousPrecipitation, 2),
-    meanTemperatureDelta:
-      currentMean == null || previousMean == null ? null : round(currentMean - previousMean, 1),
-    direction: trendDirection({
-      gddDelta: previousGdd == null ? null : currentGdd - previousGdd,
-      precipitationDelta:
-        previousPrecipitation == null ? null : currentPrecipitation - previousPrecipitation,
-      meanTemperatureDelta:
-        currentMean == null || previousMean == null ? null : currentMean - previousMean
-    })
-  };
-}
-
-export function buildHistoricalAverage(candidates: VintageCandidate[]): HistoricalAverage {
-  const years = candidates.map((candidate) => candidate.year);
-  const maxDay = Math.max(
-    0,
-    ...candidates.flatMap((candidate) =>
-      candidate.series.daily.map((day) => day.dayOfSeason)
-    )
-  );
-
-  const points = Array.from({ length: maxDay }, (_, index) => {
-    const dayOfSeason = index + 1;
-    const matching = candidates
-      .map((candidate) =>
-        candidate.series.daily.find((day) => day.dayOfSeason === dayOfSeason)
-      )
-      .filter(Boolean) as DailyViticulture[];
-
-    return {
-      dayOfSeason,
-      cumulativeGdd: averageOrNull(matching.map((day) => day.cumulativeGdd)),
-      precipitation: averageOrNull(
-        candidates.map((candidate) =>
-          sum(
-            candidate.series.daily
-              .filter((day) => day.dayOfSeason <= dayOfSeason)
-              .map((day) => day.precipitation)
-          )
-        )
-      )
-    };
-  });
-
-  return {
-    years,
-    points,
-    summary: candidates.length
-      ? {
-          cumulativeGdd: round(
-            averageOrNull(candidates.map((candidate) => candidate.series.summary.cumulativeGdd)) ?? 0,
-            1
-          ),
-          precipitation: round(
-            averageOrNull(candidates.map((candidate) => candidate.series.summary.precipitation)) ?? 0,
-            2
-          ),
-          frostDays: round(
-            averageOrNull(candidates.map((candidate) => candidate.series.summary.frostDays)) ?? 0,
-            1
-          ),
-          heatSpikeDays: round(
-            averageOrNull(candidates.map((candidate) => candidate.series.summary.heatSpikeDays)) ?? 0,
-            1
-          ),
-          averageDiurnalRange: averageOrNull(
-            candidates.map((candidate) => candidate.series.summary.averageDiurnalRange)
-          )
-        }
-      : null
-  };
-}
-
-export function calculateVintageAnalogs({
-  target,
-  candidates,
-  limit = 3
+export function compareRegions({
+  subject,
+  regions,
+  unit
 }: {
-  target: SeasonSeries;
-  candidates: VintageCandidate[];
-  limit?: number;
-}): VintageAnalog[] {
-  return candidates
-    .map((candidate) => {
+  subject: ClimateSummary;
+  regions: ClimateSummary[];
+  unit: UnitSystem;
+}): RegionComparison[] {
+  return regions
+    .map((summary) => {
       const deltas = {
-        gdd: round(candidate.series.summary.cumulativeGdd - target.summary.cumulativeGdd, 1),
-        precipitation: round(candidate.series.summary.precipitation - target.summary.precipitation, 2),
-        frostDays: candidate.series.summary.frostDays - target.summary.frostDays,
-        heatSpikeDays: candidate.series.summary.heatSpikeDays - target.summary.heatSpikeDays,
+        gdd: round(summary.cumulativeGdd - subject.cumulativeGdd, 1),
+        precipitation: round(summary.precipitation - subject.precipitation, 2),
+        frostDays: summary.frostDays - subject.frostDays,
+        heatSpikeDays: summary.heatSpikeDays - subject.heatSpikeDays,
         diurnalRange:
-          candidate.series.summary.averageDiurnalRange == null ||
-          target.summary.averageDiurnalRange == null
+          summary.averageDiurnalRange == null || subject.averageDiurnalRange == null
             ? null
-            : round(
-                candidate.series.summary.averageDiurnalRange -
-                  target.summary.averageDiurnalRange,
-                1
-              )
+            : round(summary.averageDiurnalRange - subject.averageDiurnalRange, 1)
       };
-      const distance = weightedDistance(target, candidate.series);
-      const score = Math.max(0, Math.min(100, round(100 - distance * 100, 1)));
-
+      const score = round(100 - climateDistance(subject, summary, unit) * 100, 1);
       return {
-        year: candidate.year,
-        score,
+        summary,
+        similarityScore: Math.max(0, Math.min(100, score)),
         rank: 0,
-        explanation: vintageExplanation(deltas, score),
+        explanation: explainMatch(deltas, score),
         deltas
       };
     })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((analog, index) => ({
-      ...analog,
-      rank: index + 1
-    }));
+    .sort((a, b) => b.similarityScore - a.similarityScore)
+    .map((comparison, index) => ({ ...comparison, rank: index + 1 }));
 }
 
 export function round(value: number, digits = 1): number {
@@ -291,61 +125,41 @@ export function round(value: number, digits = 1): number {
   return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
-function weightedDistance(target: SeasonSeries, candidate: SeasonSeries): number {
-  const targetSummary = target.summary;
-  const candidateSummary = candidate.summary;
-  const gdd = ratioDistance(
-    targetSummary.cumulativeGdd,
-    candidateSummary.cumulativeGdd,
-    350
-  );
-  const precipitation = ratioDistance(
-    targetSummary.precipitation,
-    candidateSummary.precipitation,
-    targetSummary.unit === "imperial" ? 6 : 150
-  );
-  const frost = countDistance(targetSummary.frostDays, candidateSummary.frostDays, 10);
-  const heat = countDistance(targetSummary.heatSpikeDays, candidateSummary.heatSpikeDays, 10);
+function climateDistance(subject: ClimateSummary, region: ClimateSummary, unit: UnitSystem): number {
+  const precipitationFloor = unit === "imperial" ? 6 : 150;
+  const diurnalFloor = unit === "imperial" ? 18 : 10;
+
+  const gdd = boundedDifference(subject.cumulativeGdd, region.cumulativeGdd, 450);
+  const precipitation = boundedDifference(subject.precipitation, region.precipitation, precipitationFloor);
+  const frost = Math.min(Math.abs(subject.frostDays - region.frostDays) / 12, 1);
+  const heat = Math.min(Math.abs(subject.heatSpikeDays - region.heatSpikeDays) / 18, 1);
   const diurnal =
-    targetSummary.averageDiurnalRange == null ||
-    candidateSummary.averageDiurnalRange == null
-      ? 0
-      : Math.min(
-          Math.abs(
-            targetSummary.averageDiurnalRange - candidateSummary.averageDiurnalRange
-          ) / (targetSummary.unit === "imperial" ? 18 : 10),
-          1
-        );
+    subject.averageDiurnalRange == null || region.averageDiurnalRange == null
+      ? 0.5
+      : Math.min(Math.abs(subject.averageDiurnalRange - region.averageDiurnalRange) / diurnalFloor, 1);
 
-  return gdd * 0.4 + precipitation * 0.2 + frost * 0.15 + heat * 0.15 + diurnal * 0.1;
+  return gdd * 0.36 + precipitation * 0.22 + frost * 0.14 + heat * 0.16 + diurnal * 0.12;
 }
 
-function ratioDistance(target: number, candidate: number, floor: number): number {
-  return Math.min(Math.abs(candidate - target) / Math.max(Math.abs(target), floor), 1);
+function boundedDifference(a: number, b: number, floor: number): number {
+  return Math.min(Math.abs(a - b) / Math.max(Math.abs(a), floor), 1);
 }
 
-function countDistance(target: number, candidate: number, floor: number): number {
-  return Math.min(Math.abs(candidate - target) / floor, 1);
-}
-
-function vintageExplanation(
-  deltas: VintageAnalog["deltas"],
-  score: number
-): string {
-  const clauses = [
+function explainMatch(deltas: RegionComparison["deltas"], score: number): string {
+  const strongest = [
     deltaPhrase(deltas.gdd, "GDD"),
     deltaPhrase(deltas.precipitation, "rain"),
-    countPhrase(deltas.frostDays, "frost day"),
-    countPhrase(deltas.heatSpikeDays, "heat spike")
-  ].filter(Boolean);
+    countPhrase(deltas.heatSpikeDays, "heat day"),
+    countPhrase(deltas.frostDays, "frost day")
+  ].join(", ");
 
-  if (score >= 90) {
-    return `Very close season shape: ${clauses.join(", ")}.`;
+  if (score >= 82) {
+    return `Very close season profile: ${strongest}.`;
   }
-  if (score >= 75) {
-    return `Good analog with moderate separation in ${clauses.join(", ")}.`;
+  if (score >= 65) {
+    return `Moderate analog with separation in ${strongest}.`;
   }
-  return `Loose analog; nearest available year but ${clauses.join(", ")} diverge.`;
+  return `Different climate signature; nearest differences are ${strongest}.`;
 }
 
 function deltaPhrase(delta: number, label: string): string {
@@ -363,35 +177,11 @@ function countPhrase(delta: number, label: string): string {
   return `${abs} ${label}${abs === 1 ? "" : "s"} ${delta > 0 ? "more" : "fewer"}`;
 }
 
-function trendDirection({
-  gddDelta,
-  precipitationDelta,
-  meanTemperatureDelta
-}: {
-  gddDelta: number | null;
-  precipitationDelta: number | null;
-  meanTemperatureDelta: number | null;
-}): TrendDirection {
-  if (meanTemperatureDelta != null && Math.abs(meanTemperatureDelta) >= 1.5) {
-    return meanTemperatureDelta > 0 ? "warmer" : "cooler";
-  }
-  if (precipitationDelta != null && Math.abs(precipitationDelta) >= 0.25) {
-    return precipitationDelta > 0 ? "wetter" : "drier";
-  }
-  if (gddDelta != null && Math.abs(gddDelta) >= 10) {
-    return gddDelta > 0 ? "warmer" : "cooler";
-  }
-  return "steady";
-}
-
-function averageOrNull(values: Array<number | null>): number | null {
-  const clean = values.filter(
-    (value): value is number => typeof value === "number" && Number.isFinite(value)
-  );
-  if (!clean.length) {
+function average(values: number[]): number | null {
+  if (!values.length) {
     return null;
   }
-  return round(sum(clean) / clean.length, 2);
+  return round(sum(values) / values.length, 2);
 }
 
 function sum(values: number[]): number {

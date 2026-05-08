@@ -1,29 +1,16 @@
 export type UnitSystem = "imperial" | "metric";
 
-export type LocationId = "north-bend" | "willamette" | "burgundy";
-
-export type WeatherSourceId =
-  | "open-meteo-history"
-  | "open-meteo-forecast"
-  | "noaa-cdo"
-  | "nasa-power"
-  | "north-bend-weather";
-
-export type WeatherSourceState =
-  | "active"
-  | "fallback"
-  | "idle"
-  | "unavailable"
-  | "reference";
-
 export interface LocationConfig {
-  id: LocationId;
+  id: string;
   name: string;
   shortName: string;
   regionLabel: string;
+  country: string;
   latitude: number;
   longitude: number;
-  timezone: string;
+  timezone?: string;
+  climateNote?: string;
+  benchmark?: boolean;
 }
 
 export interface DailyWeather {
@@ -32,77 +19,63 @@ export interface DailyWeather {
   temperatureMin: number;
   temperatureMean: number;
   precipitation: number;
-  source: WeatherSourceId;
-  isForecast?: boolean;
-}
-
-export interface CurrentConditions {
-  time: string;
-  temperature: number | null;
-  precipitation: number | null;
-  source: WeatherSourceId;
-}
-
-export interface WeatherDataset {
-  location: LocationConfig;
-  unit: UnitSystem;
-  startDate: string;
-  endDate: string;
-  daily: DailyWeather[];
-  forecastDaily: DailyWeather[];
-  current: CurrentConditions | null;
-  fetchedAt: string;
-  sources: WeatherSourceStatus[];
-  warnings: string[];
+  source: "open-meteo-history" | "open-meteo-forecast" | "nasa-power";
 }
 
 export interface WeatherSourceStatus {
-  id: WeatherSourceId;
+  id: string;
   label: string;
   url: string;
-  state: WeatherSourceState;
+  state: "active" | "fallback" | "idle" | "unavailable" | "reference";
+  note: string;
   dateRange?: string;
   lastUpdated?: string;
-  reliability: string;
-  note: string;
 }
 
 export interface SeasonWindow {
   year: number;
   startDate: string;
   endDate: string;
-  isCurrentYear: boolean;
-  isCompleteSeason: boolean;
   dayOfSeason: number;
 }
 
-export interface ProviderRequest {
+export interface ClimateSummary {
   location: LocationConfig;
-  unit: UnitSystem;
-  startDate: string;
-  endDate: string;
-  currentDate: string;
+  latestDate: string | null;
+  days: number;
+  cumulativeGdd: number;
+  precipitation: number;
+  averageHigh: number | null;
+  averageLow: number | null;
+  averageMean: number | null;
+  averageDiurnalRange: number | null;
+  frostDays: number;
+  heatSpikeDays: number;
+  last30Gdd: number;
+  last30Precipitation: number;
+  daily: DailyViticulture[];
+  warnings: string[];
 }
 
-export interface OpenMeteoDailyPayload {
-  latitude: number;
-  longitude: number;
-  generationtime_ms?: number;
-  utc_offset_seconds?: number;
-  timezone?: string;
-  daily?: {
-    time?: string[];
-    temperature_2m_max?: Array<number | null>;
-    temperature_2m_min?: Array<number | null>;
-    temperature_2m_mean?: Array<number | null>;
-    precipitation_sum?: Array<number | null>;
-  };
+export interface DailyViticulture extends DailyWeather {
+  gdd: number;
+  cumulativeGdd: number;
+  diurnalRange: number;
+  frostRisk: boolean;
+  heatSpike: boolean;
+  dayOfSeason: number;
 }
 
-export interface OpenMeteoForecastPayload extends OpenMeteoDailyPayload {
-  current?: {
-    time?: string;
-    temperature_2m?: number | null;
-    precipitation?: number | null;
+export interface RegionComparison {
+  summary: ClimateSummary;
+  similarityScore: number;
+  rank: number;
+  explanation: string;
+  deltas: {
+    gdd: number;
+    precipitation: number;
+    frostDays: number;
+    heatSpikeDays: number;
+    diurnalRange: number | null;
   };
 }

@@ -12,22 +12,15 @@ export async function GET(request: Request) {
   const year = Number.isFinite(requestedYear)
     ? Math.min(Math.max(requestedYear, 2017), currentYear)
     : currentYear;
-  const unitParam = url.searchParams.get("unit");
-  const unit: UnitSystem = unitParam === "metric" ? "metric" : "imperial";
-  const compareYearsParam = url.searchParams.get("compareYears");
-  const compareYears = compareYearsParam
-    ? compareYearsParam
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .map((value) => Number(value))
-        .filter((value) => Number.isFinite(value))
-    : [];
+  const unit: UnitSystem = url.searchParams.get("unit") === "metric" ? "metric" : "imperial";
+  const postalCode = url.searchParams.get("postalCode") ?? undefined;
+  const country = url.searchParams.get("country") ?? "us";
 
   const data = await getDashboardData({
-    year,
+    postalCode,
+    country,
     unit,
-    compareYears,
+    year,
     currentDate
   });
 

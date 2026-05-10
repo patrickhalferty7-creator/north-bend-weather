@@ -78,6 +78,29 @@ export async function getClimateDashboard({
   };
 }
 
+export async function getDashboardData({
+  postalCode,
+  country,
+  unit,
+  year,
+  currentDate
+}: {
+  postalCode?: string;
+  country?: string;
+  unit?: UnitSystem;
+  year?: number;
+  compareYears?: number[];
+  currentDate?: string;
+}): Promise<ClimateDashboardResponse> {
+  return getClimateDashboard({
+    postalCode,
+    country,
+    unit,
+    year,
+    currentDate
+  });
+}
+
 async function resolveSubjectLocation({
   postalCode,
   country,
